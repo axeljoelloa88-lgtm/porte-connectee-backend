@@ -1,3 +1,6 @@
+from dotenv import load_dotenv
+load_dotenv()
+
 from flask import Flask, request, jsonify
 import requests
 import json
@@ -6,6 +9,7 @@ import os
 
 app = Flask(__name__)
 
+# ... le reste du code
 # ===== LECTURE DES CLÉS DEPUIS LES VARIABLES D'ENVIRONNEMENT =====
 ONESIGNAL_APP_ID = os.environ.get("ONESIGNAL_APP_ID")
 ONESIGNAL_REST_API_KEY = os.environ.get("ONESIGNAL_REST_API_KEY")
