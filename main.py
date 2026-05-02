@@ -3,121 +3,102 @@ load_dotenv()
 
 from flask import Flask, request, jsonify
 import requests
-import json
 from datetime import datetime
 import os
 
 app = Flask(__name__)
 
-# ... le reste du code
-# ===== LECTURE DES CLÉS DEPUIS LES VARIABLES D'ENVIRONNEMENT =====
-ONESIGNAL_APP_ID = os.environ.get("ONESIGNAL_APP_ID")
-ONESIGNAL_REST_API_KEY = os.environ.get("ONESIGNAL_REST_API_KEY")
+# ===== NTFY CONFIG =====
+NTFY_TOPIC = "porte-connectee-joel"  # doit correspondre a ce que tu as mis dans l'app
 
-# Vérification au démarrage
-print(f"🔑 OneSignal App ID: {'OK' if ONESIGNAL_APP_ID else '❌ MANQUANT'}")
-print(f"🔑 OneSignal API Key: {'OK' if ONESIGNAL_REST_API_KEY else '❌ MANQUANT'}")
-
-# ===== ENDPOINT QUE L'ESP32 APPELERA =====
+# ===== ENDPOINT ESP32 =====
 @app.route('/alerte', methods=['POST'])
 def recevoir_alerte():
     try:
-        # Vérifie que les clés sont présentes
-        if not ONESIGNAL_APP_ID or not ONESIGNAL_REST_API_KEY:
-            print("❌ Clés OneSignal manquantes !")
-            return jsonify({"error": "Clés OneSignal non configurées"}), 500
-
-        # Reçoit les données de l'ESP32
         data = request.get_json()
-        
         if not data:
             return jsonify({"error": "Pas de données"}), 400
-        
-        message = data.get('message', 'Mouvement détecté !')
+
         temperature = data.get('temp', 0)
-        humidite = data.get('hum', 0)
-        angle = data.get('angle', 0)
-        
-        print(f"[{datetime.now()}] 📡 Alerte reçue de l'ESP32")
-        print(f"   - Message: {message}")
-        print(f"   - Température: {temperature}°C")
-        print(f"   - Humidité: {humidite}%")
-        print(f"   - Angle: {angle}°")
-        
-        # Envoie la notification via OneSignal
-        envoyer_notification_onesignal(message, temperature, humidite, angle)
-        
+        humidite    = data.get('hum',  0)
+        angle       = data.get('angle', 0)
+
+        print(f"[{datetime.now()}] Alerte reçue — {temperature}°C  {humidite}%  angle:{angle}°")
+
+        envoyer_notification_ntfy(temperature, humidite, angle)
+
         return jsonify({"status": "ok"}), 200
-        
+
     except Exception as e:
-        print(f"❌ Erreur: {e}")
+        print(f"Erreur: {e}")
         return jsonify({"error": str(e)}), 500
 
-def envoyer_notification_onesignal(message, temperature, humidite, angle):
-    """Envoie une notification push via OneSignal"""
-    
-    titre = "🚨 Mouvement près de la porte !"
-    corps_message = f"🌡️ {temperature}°C  |  💧 {humidite}%\n📡 Angle radar: {angle}°"
-    
-    url = "https://onesignal.com/api/v1/notifications"
-    
-    headers = {
-        "Content-Type": "application/json; charset=utf-8",
-        "Authorization": f"Basic {ONESIGNAL_REST_API_KEY}"
-    }
-    
-    payload = {
-        "app_id": ONESIGNAL_APP_ID,
-        "headings": {"fr": titre},
-        "contents": {"fr": corps_message},
-        "included_segments": ["Subscribed Users"],
-        "data": {
-            "type": "alerte_porte",
-            "temperature": temperature,
-            "humidite": humidite,
-            "angle": angle,
-            "timestamp": datetime.now().isoformat()
-        },
-        "android_visibility": 1,
-        "priority": 10
-    }
-    
+
+def envoyer_notification_ntfy(temperature, humidite, angle):
+    """Envoie une notification push via ntfy.sh — gratuit, sans compte"""
     try:
-        response = requests.post(url, headers=headers, json=payload)
-        result = response.json()
-        
+        response = requests.post(
+            f"https://ntfy.sh/{NTFY_TOPIC}",
+            data=f"Quelqu'un est devant la porte !\n🌡️ {temperature}°C  💧 {humidite}%  📡 {angle}°",
+            headers={
+                "Title":    "Mouvement detecte !",
+                "Priority": "urgent",
+                "Tags":     "warning,door"
+            }
+        )
         if response.status_code == 200:
-            print(f"✅ Notification envoyée ! ID: {result.get('id')}")
+            print("Notification ntfy envoyee !")
         else:
-            print(f"❌ Erreur OneSignal: {result}")
-            
+            print(f"Erreur ntfy: {response.status_code}")
     except Exception as e:
-        print(f"❌ Erreur lors de l'envoi OneSignal: {e}")
+        print(f"Erreur ntfy: {e}")
+
 
 # ===== PAGE DE TEST =====
 @app.route('/', methods=['GET'])
 def index():
-    status_api = "✅ Configurée" if ONESIGNAL_APP_ID else "❌ Non configurée"
-    return f'''
+    return '''
     <!DOCTYPE html>
     <html>
     <head>
         <title>Porte Connectée - Backend</title>
         <meta charset="UTF-8">
         <style>
-            body {{ font-family: Arial; background: #0f0f13; color: white; padding: 20px; text-align: center; }}
-            .status {{ background: #1a1a24; padding: 20px; border-radius: 10px; margin-top: 20px; }}
-            .online {{ color: #22c55e; }}
-            .info {{ color: #94a3b8; margin-top: 10px; }}
+            body{font-family:Arial;background:#0f0f13;color:white;padding:20px;text-align:center}
+            .status{background:#1a1a24;padding:20px;border-radius:10px;margin-top:20px}
+            .info{color:#94a3b8;margin-top:10px}
+            .btn{background:#3b82f6;color:white;border:none;padding:12px 24px;border-radius:8px;cursor:pointer;font-size:16px;margin-top:16px}
         </style>
     </head>
     <body>
-        <h1>🔒 Porte Connectée - Backend</h1>
+        <h1>Porte Connectee - Backend</h1>
         <div class="status">
-            <p>✅ Serveur actif !</p>
-            <p>📢 OneSignal: {status_api}</p>
+            <p>Serveur actif !</p>
             <p class="info">Endpoint: POST /alerte</p>
+            <p class="info">Notifications via: ntfy.sh</p>
         </div>
+        <form action="/test" method="get">
+            <button class="btn" type="submit">Tester la notification</button>
+        </form>
+    </body>
+    </html>
+    '''
+
+# ===== ROUTE DE TEST RAPIDE =====
+@app.route('/test', methods=['GET'])
+def test():
+    """Permet de tester la notif directement depuis le navigateur"""
+    envoyer_notification_ntfy(22.5, 45.0, 90)
+    return '''
+    <!DOCTYPE html>
+    <html>
+    <head><meta charset="UTF-8">
+    <style>body{font-family:Arial;background:#0f0f13;color:white;padding:20px;text-align:center}</style>
+    </head>
+    <body>
+        <h2>Notification de test envoyee !</h2>
+        <p style="color:#94a3b8">Verifie ton telephone</p>
+        <a href="/" style="color:#3b82f6">Retour</a>
     </body>
     </html>
     '''
